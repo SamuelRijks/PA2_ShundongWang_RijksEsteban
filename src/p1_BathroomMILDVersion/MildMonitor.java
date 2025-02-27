@@ -54,28 +54,14 @@ public class MildMonitor implements BathroomMonitor {
     public void accessAnteroom(Person p) {
         lock.lock();
         try {
-            // 调试打印：进入前厅时的状态
-            System.out.println("DEBUG: Thread " + p + " trying to access anteroom - currentGender: " + currentGender + 
-                             ", anteroomCount: " + anteroomCount + ", threadGender: " + p.getGender());
-            
             while (anteroomCount > 0 && currentGender != p.getGender()) { // 确保单性别
-                // 调试打印：等待条件时的状态
-                System.out.println("DEBUG: Thread " + p + " waiting - currentGender: " + currentGender + 
-                                 ", anteroomCount: " + anteroomCount + ", threadGender: " + p.getGender());
                 anteroomCondition.await();
             }
             waitingAreaCount--; // 从等待区离开
             if (anteroomCount == 0) {
-                currentGender = p.getGender(); // 设置前厅性别
-                // 调试打印：设置新性别时的状态
-                System.out.println("DEBUG: Thread " + p + " setting new gender - currentGender: " + currentGender + 
-                                 ", anteroomCount: " + anteroomCount);
+                currentGender = p.getGender(); // 仅在前厅空时设置性别
             }
-            anteroomCount++;
-            // 调试打印：成功进入前厅后的状态
-            System.out.println("DEBUG: Thread " + p + " entered anteroom - currentGender: " + currentGender + 
-                             ", anteroomCount: " + anteroomCount + ", threadGender: " + p.getGender());
-            
+            anteroomCount++; // 增加前厅人数
             injectTrace("\t--> ACCESSING the anteroom " + p);
             waitingAreaSpaceAvailable.signal(); // 通知等待进入等待区的人
             anteroomCondition.signalAll(); // 通知等待进入前厅的人
@@ -89,7 +75,7 @@ public class MildMonitor implements BathroomMonitor {
     public void getFreeStall(Person p) {
         lock.lock();
         try {
-            while (freeStalls == 0) {
+            while (freeStalls == 0) { // 等待空隔间
                 stallCondition.await();
             }
             int stallNumber = -1;
@@ -99,16 +85,20 @@ public class MildMonitor implements BathroomMonitor {
                     break;
                 }
             }
-            stalls[stallNumber] = false;
+            stalls[stallNumber] = false; // 占用隔间
             freeStalls--;
             p.assignStall(stallNumber);
-            anteroomCount--;
+            anteroomCount--; // 离开前厅
+            if (anteroomCount < 0) { // 防止计数器为负
+                System.err.println("ERROR: anteroomCount became negative: " + anteroomCount + " for thread " + p);
+                anteroomCount = 0; // 修正计数器
+            }
             if (anteroomCount == 0) {
                 currentGender = null; // 前厅清空
-                anteroomCondition.signalAll();
+                anteroomCondition.signalAll(); // 通知等待进入前厅的人
             }
             injectTrace("\t\t " + p + " HAS TAKEN Stall [" + stallNumber + "]");
-            stallCondition.signal();
+            stallCondition.signal(); // 通知等待隔间的人
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } finally {
@@ -120,15 +110,10 @@ public class MildMonitor implements BathroomMonitor {
         lock.lock();
         try {
             int stallNum = p.getAssignedStall();
-            stalls[stallNum] = true;
+            stalls[stallNum] = true; // 释放隔间
             freeStalls++;
-            anteroomCount--; // 确保前厅人数减少
-            if (anteroomCount == 0) {
-                currentGender = null; // 仅在前厅完全清空时清空性别
-                anteroomCondition.signalAll();
-            }
             injectTrace("<** LEAVING stall [" + stallNum + "] " + p);
-            stallCondition.signal();
+            stallCondition.signal(); // 通知等待隔间的人
         } finally {
             lock.unlock();
         }

@@ -5,15 +5,17 @@ import java.util.concurrent.Semaphore;
 import p3_QuintupletsCommon.*;
 
 public class QASynchronizer implements QuintupletSynchronizer {
-	private final Phaser phaser; // 用于屏障同步，替代三个信号量
-	private final Semaphore semaphore; // 限制 tickadiddle 最多3人使用
-	private int playedCount; // 唯一计数器，记录玩完人数
+    // Phaser para sincronizar a los 5 quintillizos en cada fase de la rutina.
+    private final Phaser phaser;
+    // Semaphore con naturaleza de multiplex: limita a 3 el uso del tickadiddle.
+    private final Semaphore semaphore;
 
-	public QASynchronizer() {
-		phaser = new Phaser(5); // 注册5个参与者
-		semaphore = new Semaphore(3); // 信号量，初始许可3
-		playedCount = 0; // 初始化计数器
-	}
+    public QASynchronizer() {
+        // Se registran 5 participantes en el Phaser.
+        phaser = new Phaser(5);
+        // Se inicializa el semaphore con 3 permisos.
+        semaphore = new Semaphore(3);
+    }
 
 	public void goPlayground(Quintuplet q) {
 		QAnalyser.injectTrace(q + " is in the playground ready to play when all together");
@@ -23,22 +25,21 @@ public class QASynchronizer implements QuintupletSynchronizer {
 			Thread.currentThread().interrupt();
 		}
 	}
-
-	public void startPlaying(Quintuplet q) {
-		try {
-			semaphore.acquire(); // 获取许可，最多3人玩
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			QAnalyser.injectTrace("Interrupted while starting to play: " + q);
-			return;
-		}
-		QAnalyser.injectTrace(q + " is having fun with the tickadiddle");
-	}
+    public void startPlaying(Quintuplet q) {
+        try {
+            // Adquiere un permiso; máximo 3 quintillizos podrán jugar simultáneamente.
+            semaphore.acquire();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            QAnalyser.injectTrace("Interrupted while starting to play: " + q);
+            return;
+        }
+        QAnalyser.injectTrace(q + " is having fun with the tickadiddle");
+    }
 
 	public void endPlaying(Quintuplet q) {
 		QAnalyser.injectTrace(q + " is about to leave the tickadiddle");
 		try {
-			playedCount++; // 递增计数器，无需互斥保护（Phaser 同步足够）
 			semaphore.release(); // 释放许可
 
 			phaser.arriveAndAwaitAdvance(); // 阶段1：五人玩完，推进
@@ -48,18 +49,18 @@ public class QASynchronizer implements QuintupletSynchronizer {
 		}
 	}
 
-	public void goHomeForASnack(Quintuplet q) {
-		try {
-			phaser.arriveAndAwaitAdvance(); // 阶段2：五人到达
-			QAnalyser.injectTrace(q + " is having a snack at home");
-			playedCount--;
-
-			phaser.arriveAndAwaitAdvance(); // 阶段3：五人完成吃点心
-			if (playedCount == 0) {
-				phaser.arriveAndAwaitAdvance(); // 阶段4：重置
-			}
-		} catch (Exception e) {
+    public void goHomeForASnack(Quintuplet q) {
+    	try {
+            // Fase 2: Espera a que todos estén listos para ir a la merienda.
+            phaser.arriveAndAwaitAdvance();
+            QAnalyser.injectTrace(q + " is having a snack at home");
+            // Fase 3: Espera a que todos hayan terminado la merienda.
+            phaser.arriveAndAwaitAdvance();
+    	} catch (Exception e) {
 			Thread.currentThread().interrupt();
 		}
 	}
+    	
+
+    
 }
